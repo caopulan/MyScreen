@@ -51,6 +51,15 @@ actor SourceCatalogService {
                 let title = windowTitle.isEmpty || windowTitle == appName ? appName : "\(appName) — \(windowTitle)"
                 let isAvailable = snapshot?.isOnScreen ?? window.isOnScreen
 
+                guard shouldIncludeWindow(
+                    title: title,
+                    bundleIdentifier: bundleID,
+                    snapshot: snapshot,
+                    frame: window.frame
+                ) else {
+                    return nil
+                }
+
                 return MonitorSource.window(
                     windowID: window.windowID,
                     title: title,
@@ -71,6 +80,25 @@ actor SourceCatalogService {
         "Display \(display.displayID) · \(display.width)×\(display.height)"
     }
 
+    private func shouldIncludeWindow(
+        title: String,
+        bundleIdentifier: String?,
+        snapshot: WindowSnapshot?,
+        frame: CGRect
+    ) -> Bool {
+        guard bundleIdentifier != nil else { return false }
+        guard !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+        guard frame.width >= 160, frame.height >= 100 else { return false }
+
+        if let snapshot {
+            guard snapshot.layer == 0 else { return false }
+            guard snapshot.alpha > 0.03 else { return false }
+            guard snapshot.bounds.width >= 160, snapshot.bounds.height >= 100 else { return false }
+        }
+
+        return true
+    }
+
     private func currentWindowSnapshots() -> [UInt32: WindowSnapshot] {
         guard let windowInfoList = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String: Any]] else {
             return [:]
@@ -84,10 +112,17 @@ actor SourceCatalogService {
             let windowID = rawWindowID.uint32Value
             let ownerPID = (info[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value
             let isOnScreen = (info[kCGWindowIsOnscreen as String] as? NSNumber)?.boolValue ?? false
+            let layer = (info[kCGWindowLayer as String] as? NSNumber)?.intValue ?? 0
+            let alpha = (info[kCGWindowAlpha as String] as? NSNumber)?.doubleValue ?? 1
+            let boundsPayload = info[kCGWindowBounds as String] as? [String: Any]
+            let bounds = boundsPayload.flatMap { CGRect(dictionaryRepresentation: $0 as CFDictionary) } ?? .zero
 
             partialResult[windowID] = WindowSnapshot(
                 ownerPID: ownerPID,
-                isOnScreen: isOnScreen
+                isOnScreen: isOnScreen,
+                layer: layer,
+                alpha: alpha,
+                bounds: bounds
             )
         }
     }
@@ -96,4 +131,7 @@ actor SourceCatalogService {
 private struct WindowSnapshot {
     var ownerPID: Int32?
     var isOnScreen: Bool
+    var layer: Int
+    var alpha: Double
+    var bounds: CGRect
 }

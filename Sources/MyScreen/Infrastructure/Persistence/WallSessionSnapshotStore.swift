@@ -4,11 +4,13 @@ struct WallSessionSnapshot: Codable, Equatable {
     var selectedSources: [MonitorSource]
     var focusedSourceID: String?
     var windowSize: CodableSize
+    var preferredColumnCount: Int?
 
     static let empty = WallSessionSnapshot(
         selectedSources: [],
         focusedSourceID: nil,
-        windowSize: CodableSize(width: 1440, height: 900)
+        windowSize: CodableSize(width: 1440, height: 900),
+        preferredColumnCount: nil
     )
 }
 

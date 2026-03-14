@@ -37,17 +37,21 @@ enum CaptureBudgetPlanner {
     static func plan(for sources: [MonitorSource], focusSourceID: String?) -> CaptureBudgetPlan {
         let count = sources.count
         guard count > 0 else {
-            return CaptureBudgetPlan(previewMaxDimension: 640, deliveryModes: [:])
+            return CaptureBudgetPlan(previewMaxDimension: 960, deliveryModes: [:])
         }
 
         let previewMaxDimension: Int
         switch count {
-        case 1 ... 4:
-            previewMaxDimension = 640
+        case 1 ... 2:
+            previewMaxDimension = 1280
+        case 3 ... 4:
+            previewMaxDimension = 1080
         case 5 ... 8:
-            previewMaxDimension = 560
+            previewMaxDimension = 900
+        case 9 ... 12:
+            previewMaxDimension = 768
         default:
-            previewMaxDimension = 480
+            previewMaxDimension = 640
         }
 
         var orderedIDs = sources.map(\.id)

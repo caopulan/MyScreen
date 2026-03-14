@@ -8,35 +8,48 @@ struct MonitorTileView: View {
     let onRemove: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .center, spacing: 8) {
+                Circle()
+                    .fill(tile.statusColor)
+                    .frame(width: 8, height: 8)
+
+                VStack(alignment: .leading, spacing: 2) {
                     Text(source.title)
-                        .font(.headline)
+                        .font(.subheadline.weight(.semibold))
                         .lineLimit(1)
-                    Text(source.kind.displayName)
-                        .font(.caption.weight(.medium))
+                    Text(titleMetadata)
+                        .font(.caption)
                         .foregroundStyle(.secondary)
                 }
 
-                Spacer(minLength: 12)
+                Spacer(minLength: 0)
 
-                statusBadge
+                Button(action: onToggleFocus) {
+                    Image(systemName: isFocused ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
+                }
+                .buttonStyle(.borderless)
+                .help(isFocused ? "Exit Focus" : "Focus")
+
+                Button(role: .destructive, action: onRemove) {
+                    Image(systemName: "xmark")
+                }
+                .buttonStyle(.borderless)
+                .help("Remove")
             }
 
             ZStack {
-                RoundedRectangle(cornerRadius: 14)
-                    .fill(Color(nsColor: .controlBackgroundColor))
+                Rectangle()
+                    .fill(Color.black.opacity(0.92))
 
                 if let preview = tile.previewImage {
                     Image(nsImage: preview)
                         .resizable()
                         .scaledToFit()
-                        .clipShape(RoundedRectangle(cornerRadius: 14))
                 } else {
                     VStack(spacing: 8) {
                         Image(systemName: source.kind == .display ? "display" : "macwindow")
-                            .font(.system(size: 26, weight: .medium))
+                            .font(.system(size: 24, weight: .medium))
                         Text(tilePlaceholderText)
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
@@ -45,58 +58,27 @@ struct MonitorTileView: View {
             }
             .frame(maxWidth: .infinity)
             .aspectRatio(16 / 10, contentMode: .fit)
-
-            HStack {
-                Text(lastFrameText)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                Spacer()
-
-                Text(tile.fpsTier.displayName)
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
-
-                Button(isFocused ? "Exit Focus" : "Focus", action: onToggleFocus)
-                Button("Remove", role: .destructive, action: onRemove)
-            }
-            .buttonStyle(.borderless)
-
+        }
+        .overlay(alignment: .topLeading) {
             if let errorMessage = tile.errorMessage {
                 Text(errorMessage)
-                    .font(.caption)
+                    .font(.caption2)
                     .foregroundStyle(.orange)
-                    .lineLimit(2)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.black.opacity(0.6))
             }
         }
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 18)
-                .fill(Color(nsColor: .underPageBackgroundColor))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 18)
-                .stroke(isFocused ? Color.accentColor : Color.primary.opacity(0.08), lineWidth: isFocused ? 2 : 1)
-        )
     }
 
-    private var statusBadge: some View {
-        Text(tile.statusLabel)
-            .font(.caption.weight(.semibold))
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .background(tile.statusColor.opacity(0.16))
-            .foregroundStyle(tile.statusColor)
-            .clipShape(Capsule())
-    }
-
-    private var lastFrameText: String {
-        if let lastFrameAt = tile.lastFrameAt {
-            "Last frame \(lastFrameAt.formatted(date: .omitted, time: .standard))"
-        } else if source.isAvailable {
-            "Waiting for first frame"
-        } else {
-            "Source offline"
+    private var titleMetadata: String {
+        switch tile.freshness {
+        case .live:
+            return source.kind.displayName
+        case .stale:
+            return "\(source.kind.displayName) · Waiting"
+        case .offline:
+            return "\(source.kind.displayName) · Offline"
         }
     }
 

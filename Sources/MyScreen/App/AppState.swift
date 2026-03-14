@@ -41,8 +41,13 @@ final class AppState {
         self.wallLayout = WallLayoutState(
             activeSourceIDs: snapshot.selectedSources.map(\.id),
             focusedSourceID: snapshot.focusedSourceID,
-            grid: WallGridCalculator.calculate(for: snapshot.selectedSources.count, in: snapshot.windowSize.cgSize),
-            windowSize: snapshot.windowSize
+            grid: WallGridCalculator.calculate(
+                for: snapshot.selectedSources.count,
+                in: snapshot.windowSize.cgSize,
+                preferredColumnCount: snapshot.preferredColumnCount
+            ),
+            windowSize: snapshot.windowSize,
+            preferredColumnCount: snapshot.preferredColumnCount
         )
         self.tiles = Dictionary(
             uniqueKeysWithValues: snapshot.selectedSources.map { source in
@@ -103,7 +108,11 @@ final class AppState {
         let codableSize = CodableSize(size)
         guard wallLayout.windowSize != codableSize else { return }
         wallLayout.windowSize = codableSize
-        wallLayout.grid = WallGridCalculator.calculate(for: selectedSources.count, in: size)
+        wallLayout.grid = WallGridCalculator.calculate(
+            for: selectedSources.count,
+            in: size,
+            preferredColumnCount: wallLayout.preferredColumnCount
+        )
         persistSnapshot()
     }
 
@@ -111,6 +120,16 @@ final class AppState {
         wallLayout.focusedSourceID = sourceID
         persistSnapshot()
         scheduleCaptureSync()
+    }
+
+    func setPreferredColumnCount(_ preferredColumnCount: Int?) {
+        wallLayout.preferredColumnCount = preferredColumnCount
+        wallLayout.grid = WallGridCalculator.calculate(
+            for: selectedSources.count,
+            in: wallLayout.windowSize.cgSize,
+            preferredColumnCount: preferredColumnCount
+        )
+        persistSnapshot()
     }
 
     func refreshSourceCatalog() async {
@@ -128,7 +147,11 @@ final class AppState {
             sourceCatalog = catalog
             selectedSources = SourceCatalogReconciler.reconcileSelections(selectedSources, with: catalog)
             wallLayout.activeSourceIDs = selectedSources.map(\.id)
-            wallLayout.grid = WallGridCalculator.calculate(for: selectedSources.count, in: wallLayout.windowSize.cgSize)
+            wallLayout.grid = WallGridCalculator.calculate(
+                for: selectedSources.count,
+                in: wallLayout.windowSize.cgSize,
+                preferredColumnCount: wallLayout.preferredColumnCount
+            )
             ensureTileStateCoverage()
             syncTilesWithSelectedSources()
             persistSnapshot()
@@ -150,7 +173,11 @@ final class AppState {
 
         selectedSources.append(source)
         wallLayout.activeSourceIDs = selectedSources.map(\.id)
-        wallLayout.grid = WallGridCalculator.calculate(for: selectedSources.count, in: wallLayout.windowSize.cgSize)
+        wallLayout.grid = WallGridCalculator.calculate(
+            for: selectedSources.count,
+            in: wallLayout.windowSize.cgSize,
+            preferredColumnCount: wallLayout.preferredColumnCount
+        )
         tiles[source.id] = TileState.placeholder(
             sourceID: source.id,
             fpsTier: .balanced,
@@ -164,7 +191,11 @@ final class AppState {
     func replaceSelectedSources(_ sources: [MonitorSource]) {
         selectedSources = sources
         wallLayout.activeSourceIDs = sources.map(\.id)
-        wallLayout.grid = WallGridCalculator.calculate(for: sources.count, in: wallLayout.windowSize.cgSize)
+        wallLayout.grid = WallGridCalculator.calculate(
+            for: sources.count,
+            in: wallLayout.windowSize.cgSize,
+            preferredColumnCount: wallLayout.preferredColumnCount
+        )
         ensureTileStateCoverage()
         syncTilesWithSelectedSources()
         persistSnapshot()
@@ -178,7 +209,11 @@ final class AppState {
         if wallLayout.focusedSourceID == id {
             wallLayout.focusedSourceID = nil
         }
-        wallLayout.grid = WallGridCalculator.calculate(for: selectedSources.count, in: wallLayout.windowSize.cgSize)
+        wallLayout.grid = WallGridCalculator.calculate(
+            for: selectedSources.count,
+            in: wallLayout.windowSize.cgSize,
+            preferredColumnCount: wallLayout.preferredColumnCount
+        )
         persistSnapshot()
         scheduleCaptureSync()
     }
@@ -218,7 +253,8 @@ final class AppState {
             WallSessionSnapshot(
                 selectedSources: selectedSources,
                 focusedSourceID: wallLayout.focusedSourceID,
-                windowSize: wallLayout.windowSize
+                windowSize: wallLayout.windowSize,
+                preferredColumnCount: wallLayout.preferredColumnCount
             )
         )
     }

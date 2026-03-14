@@ -11,12 +11,19 @@ struct WallLayoutState: Codable, Equatable, Sendable {
     var focusedSourceID: String?
     var grid: WallGrid
     var windowSize: CodableSize
+    var preferredColumnCount: Int?
 }
 
 enum WallGridCalculator {
-    static func calculate(for sourceCount: Int, in size: CGSize) -> WallGrid {
+    static func calculate(for sourceCount: Int, in size: CGSize, preferredColumnCount: Int? = nil) -> WallGrid {
         guard sourceCount > 0 else {
             return WallGrid(columns: 1, rows: 1)
+        }
+
+        if let preferredColumnCount {
+            let columns = max(1, min(sourceCount, preferredColumnCount))
+            let rows = Int(ceil(Double(sourceCount) / Double(columns)))
+            return WallGrid(columns: columns, rows: rows)
         }
 
         let maxColumns = min(sourceCount, 4)
