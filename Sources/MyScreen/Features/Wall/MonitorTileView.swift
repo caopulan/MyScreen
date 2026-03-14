@@ -4,6 +4,8 @@ struct MonitorTileView: View {
     let source: MonitorSource
     let tile: TileState
     let isFocused: Bool
+    let isBeingDragged: Bool
+    let isDropTarget: Bool
     let onActivate: () -> Void
     let onToggleFocus: () -> Void
     let onRemove: () -> Void
@@ -43,8 +45,17 @@ struct MonitorTileView: View {
         .clipShape(RoundedRectangle(cornerRadius: 10))
         .overlay(
             RoundedRectangle(cornerRadius: 10)
-                .stroke(isFocused ? Color.accentColor : Color.white.opacity(0.08), lineWidth: isFocused ? 2 : 1)
+                .stroke(borderColor, lineWidth: borderWidth)
         )
+        .overlay {
+            if isDropTarget && !isBeingDragged {
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Color.white.opacity(0.04))
+            }
+        }
+        .shadow(color: Color.black.opacity(isBeingDragged ? 0.42 : 0), radius: isBeingDragged ? 18 : 0, y: isBeingDragged ? 12 : 0)
+        .scaleEffect(isBeingDragged ? 0.985 : 1)
+        .opacity(isBeingDragged ? 0.76 : 1)
         .contentShape(RoundedRectangle(cornerRadius: 10))
         .onTapGesture(perform: onActivate)
         .overlay(alignment: .topLeading) {
@@ -58,6 +69,26 @@ struct MonitorTileView: View {
                     .padding(10)
             }
         }
+    }
+
+    private var borderColor: Color {
+        if isDropTarget {
+            return Color.white.opacity(0.26)
+        }
+        if isFocused {
+            return Color.accentColor
+        }
+        return Color.white.opacity(0.08)
+    }
+
+    private var borderWidth: CGFloat {
+        if isFocused {
+            return 2
+        }
+        if isDropTarget {
+            return 1.5
+        }
+        return 1
     }
 
     private var header: some View {

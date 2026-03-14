@@ -226,6 +226,20 @@ final class AppState {
         scheduleCaptureSync()
     }
 
+    func moveSelectedSource(id sourceID: String, to targetSourceID: String) {
+        let reorderedSources = SelectedSourceReorderer.reordered(
+            sources: selectedSources,
+            moving: sourceID,
+            to: targetSourceID
+        )
+        guard reorderedSources.map(\.id) != selectedSources.map(\.id) else { return }
+
+        selectedSources = reorderedSources
+        wallLayout.activeSourceIDs = reorderedSources.map(\.id)
+        persistSnapshot()
+        scheduleCaptureSync()
+    }
+
     private func ensureTileStateCoverage() {
         for source in selectedSources {
             if tiles[source.id] == nil {
