@@ -23,6 +23,7 @@ struct MonitorSource: Identifiable, Codable, Hashable, Sendable {
     var processID: Int32?
     var windowID: UInt32?
     var displayID: UInt32?
+    var windowTitle: String?
     var isAvailable: Bool
     var lastSeenAt: Date?
 
@@ -42,6 +43,7 @@ struct MonitorSource: Identifiable, Codable, Hashable, Sendable {
             processID: processID,
             windowID: nil,
             displayID: displayID,
+            windowTitle: nil,
             isAvailable: isAvailable,
             lastSeenAt: lastSeenAt
         )
@@ -52,6 +54,7 @@ struct MonitorSource: Identifiable, Codable, Hashable, Sendable {
         title: String,
         bundleIdentifier: String? = nil,
         processID: Int32? = nil,
+        windowTitle: String? = nil,
         isAvailable: Bool = true,
         lastSeenAt: Date? = nil
     ) -> MonitorSource {
@@ -63,6 +66,7 @@ struct MonitorSource: Identifiable, Codable, Hashable, Sendable {
             processID: processID,
             windowID: windowID,
             displayID: nil,
+            windowTitle: windowTitle,
             isAvailable: isAvailable,
             lastSeenAt: lastSeenAt
         )

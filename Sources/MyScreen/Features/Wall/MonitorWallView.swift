@@ -7,7 +7,7 @@ struct MonitorWallView: View {
         GeometryReader { proxy in
             content(in: proxy.size)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .padding(20)
+                .padding(6)
                 .onAppear {
                     appState.updateWindowSize(proxy.size)
                 }
@@ -15,30 +15,30 @@ struct MonitorWallView: View {
                     appState.updateWindowSize(newValue)
                 }
         }
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(Color.black)
     }
 
     @ViewBuilder
     private func content(in size: CGSize) -> some View {
         if appState.selectedSources.isEmpty {
-            ContentUnavailableView(
-                "No Monitoring Sources Yet",
-                systemImage: "square.grid.3x3",
-                description: Text("Add displays and app windows to build the monitoring wall.")
-            )
-        } else {
-            VStack(alignment: .leading, spacing: 16) {
-                WallControlBar(
-                    selectedColumnCount: appState.wallLayout.preferredColumnCount,
-                    sourceCount: appState.selectedSources.count,
-                    liveCount: appState.tiles.values.filter { $0.freshness == .live }.count,
-                    onSelectColumnCount: { columnCount in
-                        appState.setPreferredColumnCount(columnCount)
-                    }
-                )
+            ZStack {
+                Rectangle()
+                    .fill(Color.black)
 
-                wallContent(in: size)
+                VStack(spacing: 12) {
+                    Image(systemName: "rectangle.grid.2x2")
+                        .font(.system(size: 28, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.7))
+                    Text("No Monitoring Sources Yet")
+                        .font(.headline)
+                        .foregroundStyle(.white.opacity(0.92))
+                    Text("Use Add Sources in the toolbar to build the wall.")
+                        .font(.subheadline)
+                        .foregroundStyle(.white.opacity(0.55))
+                }
             }
+        } else {
+            wallContent(in: size)
         }
     }
 
@@ -54,13 +54,13 @@ struct MonitorWallView: View {
             )
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 6) {
                     tileView(for: focusSource)
 
                     if !remainingSources.isEmpty {
                         LazyVGrid(
-                            columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: max(remainingGrid.columns, 1)),
-                            spacing: 10
+                            columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: max(remainingGrid.columns, 1)),
+                            spacing: 6
                         ) {
                             ForEach(remainingSources) { source in
                                 tileView(for: source)
@@ -70,9 +70,9 @@ struct MonitorWallView: View {
                 }
             }
         } else {
-            let columns = Array(repeating: GridItem(.flexible(), spacing: 10), count: max(appState.wallLayout.grid.columns, 1))
+            let columns = Array(repeating: GridItem(.flexible(), spacing: 6), count: max(appState.wallLayout.grid.columns, 1))
             ScrollView {
-                LazyVGrid(columns: columns, spacing: 10) {
+                LazyVGrid(columns: columns, spacing: 6) {
                     ForEach(appState.selectedSources) { source in
                         tileView(for: source)
                     }
@@ -91,6 +91,9 @@ struct MonitorWallView: View {
                 lastFrameAt: source.lastSeenAt
             ),
             isFocused: appState.wallLayout.focusedSourceID == source.id,
+            onActivate: {
+                appState.activate(sourceID: source.id)
+            },
             onToggleFocus: {
                 appState.setFocusedSourceID(appState.wallLayout.focusedSourceID == source.id ? nil : source.id)
             },
@@ -98,46 +101,5 @@ struct MonitorWallView: View {
                 appState.removeSource(id: source.id)
             }
         )
-    }
-}
-
-private struct WallControlBar: View {
-    let selectedColumnCount: Int?
-    let sourceCount: Int
-    let liveCount: Int
-    let onSelectColumnCount: (Int?) -> Void
-
-    var body: some View {
-        HStack(spacing: 14) {
-            Text("\(sourceCount) sources")
-                .font(.headline)
-
-            Text("\(liveCount) live")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-
-            Spacer()
-
-            HStack(spacing: 8) {
-                Text("Columns")
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.secondary)
-
-                Picker("Columns", selection: Binding(
-                    get: { selectedColumnCount ?? 0 },
-                    set: { value in
-                        onSelectColumnCount(value == 0 ? nil : value)
-                    }
-                )) {
-                    Text("Auto").tag(0)
-                    ForEach(1 ... 6, id: \.self) { count in
-                        Text("\(count)").tag(count)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .frame(width: 250)
-            }
-        }
-        .padding(.horizontal, 4)
     }
 }

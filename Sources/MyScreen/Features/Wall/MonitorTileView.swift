@@ -4,61 +4,49 @@ struct MonitorTileView: View {
     let source: MonitorSource
     let tile: TileState
     let isFocused: Bool
+    let onActivate: () -> Void
     let onToggleFocus: () -> Void
     let onRemove: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .center, spacing: 8) {
-                Circle()
-                    .fill(tile.statusColor)
-                    .frame(width: 8, height: 8)
+        ZStack(alignment: .topLeading) {
+            Rectangle()
+                .fill(Color.black)
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(source.title)
-                        .font(.subheadline.weight(.semibold))
-                        .lineLimit(1)
-                    Text(titleMetadata)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+            if let preview = tile.previewImage {
+                Image(nsImage: preview)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                VStack(spacing: 10) {
+                    Image(systemName: source.kind == .display ? "display" : "macwindow")
+                        .font(.system(size: 24, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.75))
+                    Text(tilePlaceholderText)
+                        .font(.subheadline)
+                        .foregroundStyle(.white.opacity(0.52))
                 }
-
-                Spacer(minLength: 0)
-
-                Button(action: onToggleFocus) {
-                    Image(systemName: isFocused ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
-                }
-                .buttonStyle(.borderless)
-                .help(isFocused ? "Exit Focus" : "Focus")
-
-                Button(role: .destructive, action: onRemove) {
-                    Image(systemName: "xmark")
-                }
-                .buttonStyle(.borderless)
-                .help("Remove")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
 
-            ZStack {
-                Rectangle()
-                    .fill(Color.black.opacity(0.92))
+            LinearGradient(
+                colors: [Color.black.opacity(0.72), Color.black.opacity(0.32), .clear],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(height: 86)
 
-                if let preview = tile.previewImage {
-                    Image(nsImage: preview)
-                        .resizable()
-                        .scaledToFit()
-                } else {
-                    VStack(spacing: 8) {
-                        Image(systemName: source.kind == .display ? "display" : "macwindow")
-                            .font(.system(size: 24, weight: .medium))
-                        Text(tilePlaceholderText)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
-            .frame(maxWidth: .infinity)
-            .aspectRatio(16 / 10, contentMode: .fit)
+            header
         }
+        .aspectRatio(16 / 10, contentMode: .fit)
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(isFocused ? Color.accentColor : Color.white.opacity(0.08), lineWidth: isFocused ? 2 : 1)
+        )
+        .contentShape(RoundedRectangle(cornerRadius: 10))
+        .onTapGesture(perform: onActivate)
         .overlay(alignment: .topLeading) {
             if let errorMessage = tile.errorMessage {
                 Text(errorMessage)
@@ -67,8 +55,46 @@ struct MonitorTileView: View {
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
                     .background(Color.black.opacity(0.6))
+                    .padding(10)
             }
         }
+    }
+
+    private var header: some View {
+        HStack(alignment: .center, spacing: 10) {
+            SourceIconView(source: source, size: 18, padding: 5, backgroundOpacity: 0.18)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(source.title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.94))
+                    .lineLimit(1)
+                Text(titleMetadata)
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.6))
+            }
+
+            Spacer(minLength: 0)
+
+            Circle()
+                .fill(tile.statusColor)
+                .frame(width: 8, height: 8)
+
+            Button(action: onToggleFocus) {
+                Image(systemName: isFocused ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
+            }
+            .buttonStyle(.borderless)
+            .foregroundStyle(.white.opacity(0.82))
+            .help(isFocused ? "Exit Focus" : "Focus")
+
+            Button(role: .destructive, action: onRemove) {
+                Image(systemName: "xmark")
+            }
+            .buttonStyle(.borderless)
+            .foregroundStyle(.white.opacity(0.82))
+            .help("Remove")
+        }
+        .padding(10)
     }
 
     private var titleMetadata: String {

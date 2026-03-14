@@ -1,4 +1,3 @@
-import AppKit
 import SwiftUI
 
 struct SourcePickerView: View {
@@ -190,7 +189,7 @@ private struct SourcePickerCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top, spacing: 12) {
-                SourceIconView(source: source)
+                SourceIconView(source: source, size: 34, padding: 8, backgroundOpacity: 0.12)
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(source.title)
@@ -246,38 +245,5 @@ private struct SourcePickerCard: View {
         let pidText = source.processID.map { "pid \($0)" } ?? "pid -"
         let bundleText = source.bundleIdentifier ?? "display source"
         return "\(source.kind.displayName) · \(pidText) · \(bundleText)"
-    }
-}
-
-private struct SourceIconView: View {
-    let source: MonitorSource
-
-    var body: some View {
-        Group {
-            if let image = applicationIcon {
-                Image(nsImage: image)
-                    .resizable()
-                    .scaledToFit()
-            } else {
-                Image(systemName: source.kind == .display ? "display" : "macwindow")
-                    .font(.system(size: 18, weight: .medium))
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .frame(width: 38, height: 38)
-        .padding(8)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color(nsColor: .controlBackgroundColor))
-        )
-    }
-
-    private var applicationIcon: NSImage? {
-        guard let bundleIdentifier = source.bundleIdentifier,
-              let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier) else {
-            return nil
-        }
-
-        return NSWorkspace.shared.icon(forFile: appURL.path)
     }
 }

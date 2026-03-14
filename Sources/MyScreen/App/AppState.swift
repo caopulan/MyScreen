@@ -17,6 +17,7 @@ final class AppState {
 
     private let permissionService: ScreenCapturePermissionService
     private let sourceCatalogService: SourceCatalogService
+    private let windowActivationService: WindowActivationService
     private let snapshotStore: WallSessionSnapshotStore
     private let captureCoordinator: CaptureCoordinator
     private var captureSyncTask: Task<Void, Never>?
@@ -26,11 +27,13 @@ final class AppState {
     init(
         permissionService: ScreenCapturePermissionService = ScreenCapturePermissionService(),
         sourceCatalogService: SourceCatalogService = SourceCatalogService(),
+        windowActivationService: WindowActivationService = WindowActivationService(),
         captureCoordinator: CaptureCoordinator = CaptureCoordinator(),
         snapshotStore: WallSessionSnapshotStore = WallSessionSnapshotStore()
     ) {
         self.permissionService = permissionService
         self.sourceCatalogService = sourceCatalogService
+        self.windowActivationService = windowActivationService
         self.captureCoordinator = captureCoordinator
         self.snapshotStore = snapshotStore
 
@@ -130,6 +133,11 @@ final class AppState {
             preferredColumnCount: preferredColumnCount
         )
         persistSnapshot()
+    }
+
+    func activate(sourceID: String) {
+        guard let source = selectedSources.first(where: { $0.id == sourceID }) else { return }
+        windowActivationService.activate(source: source)
     }
 
     func refreshSourceCatalog() async {

@@ -38,6 +38,22 @@ private struct RootView: View {
         .toolbar {
             if appState.permissionStatus == .granted {
                 ToolbarItemGroup(placement: .primaryAction) {
+                    Menu {
+                        Button("Auto") {
+                            appState.setPreferredColumnCount(nil)
+                        }
+
+                        Divider()
+
+                        ForEach(1 ... 6, id: \.self) { count in
+                            Button("\(count) Columns") {
+                                appState.setPreferredColumnCount(count)
+                            }
+                        }
+                    } label: {
+                        Label("Layout", systemImage: "square.grid.3x3")
+                    }
+
                     Button {
                         Task {
                             await appState.refreshSourceCatalog()
@@ -50,7 +66,7 @@ private struct RootView: View {
                     Button {
                         appState.isSourcePickerPresented = true
                     } label: {
-                        Label("Sources", systemImage: "slider.horizontal.3")
+                        Label("Add Sources", systemImage: "plus.rectangle.on.rectangle")
                     }
                 }
             }

@@ -45,6 +45,7 @@ actor SourceCatalogService {
                     title: title,
                     bundleIdentifier: app.bundleIdentifier,
                     processID: snapshot.ownerPID,
+                    windowTitle: windowTitle.isEmpty ? nil : windowTitle,
                     isAvailable: snapshot.isOnScreen,
                     lastSeenAt: snapshot.isOnScreen ? now : nil
                 )
