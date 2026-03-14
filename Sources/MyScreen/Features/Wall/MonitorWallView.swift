@@ -41,7 +41,7 @@ struct MonitorWallView: View {
                     Text("No Monitoring Sources Yet")
                         .font(.headline)
                         .foregroundStyle(.white.opacity(0.92))
-                    Text("Use Add Sources in the toolbar to build the wall.")
+                    Text("Use Add in the floating controls to build the wall.")
                         .font(.subheadline)
                         .foregroundStyle(.white.opacity(0.55))
                 }
@@ -77,6 +77,7 @@ struct MonitorWallView: View {
                         }
                     }
                 }
+                .padding(.bottom, 82)
             }
             .coordinateSpace(name: wallCoordinateSpace)
             .onPreferenceChange(MonitorWallTileFramePreferenceKey.self) { newValue in
@@ -100,6 +101,7 @@ struct MonitorWallView: View {
                         interactiveTileView(for: source)
                     }
                 }
+                .padding(.bottom, 82)
             }
             .coordinateSpace(name: wallCoordinateSpace)
             .onPreferenceChange(MonitorWallTileFramePreferenceKey.self) { newValue in
