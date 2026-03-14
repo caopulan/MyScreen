@@ -9,13 +9,19 @@ let package = Package(
     products: [
         .executable(name: "MyScreen", targets: ["MyScreen"]),
     ],
+    dependencies: [
+        .package(url: "https://github.com/swiftlang/swift-testing.git", revision: "c9d57c8"),
+    ],
     targets: [
         .executableTarget(
             name: "MyScreen"
         ),
         .testTarget(
             name: "MyScreenTests",
-            dependencies: ["MyScreen"]
+            dependencies: [
+                "MyScreen",
+                .product(name: "Testing", package: "swift-testing"),
+            ]
         ),
     ]
 )
