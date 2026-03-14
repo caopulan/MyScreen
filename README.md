@@ -1,6 +1,10 @@
 # MyScreen
 
 <p align="center">
+  <img src="assets/readme-hero.png" alt="MyScreen monitoring wall" width="1024">
+</p>
+
+<p align="center">
   A native macOS monitoring wall for live displays and app windows.
 </p>
 
@@ -24,20 +28,20 @@ MyScreen turns your Mac into a small control room for windows and screens. You p
 
 This project is source-first and open development focused. There is no notarized installer or packaged release yet; the current workflow is to build and run it locally from source.
 
-## Features
+## ✨ Features
 
-- Live previews for physical displays and selected app windows
-- One wall for both display sources and window sources
-- Automatic grid layout with optional fixed column counts
-- Focus mode for a single enlarged source
-- Drag-to-reorder in the standard grid view
-- Offline detection for closed windows and disconnected sources
-- Session persistence for selected sources, layout, and focus state
-- Source picker with live previews before adding sources
-- Click-to-activate for window tiles
-- Adaptive capture budget for larger walls
+- 🖥️ Live previews for physical displays and selected app windows
+- 🧩 One wall for both display sources and window sources
+- 📐 Automatic grid layout with optional fixed column counts
+- 🔍 Focus mode for a single enlarged source
+- ↕️ Drag-to-reorder in the standard grid view
+- 🚦 Offline detection for closed windows and disconnected sources
+- 💾 Session persistence for selected sources, layout, and focus state
+- 👀 Source picker with live previews before adding sources
+- 🎯 Click-to-activate for window tiles
+- ⚖️ Adaptive capture budget for larger walls
 
-## Why MyScreen
+## 🎯 Why MyScreen
 
 MyScreen is useful when you want a lightweight monitoring wall for your own Mac rather than a remote desktop product or a recording system. It is designed for:
 
@@ -52,7 +56,7 @@ It is not trying to be:
 - A historical playback system
 - A window manager that rearranges real app windows on your behalf
 
-## Installation
+## 🛠️ Installation
 
 MyScreen currently ships as source code.
 
@@ -72,7 +76,7 @@ swift build
 
 You can also open the Swift package directly in Xcode.
 
-## Quick Start
+## 🚀 Quick Start
 
 Run the app:
 
@@ -92,7 +96,7 @@ If the permission dialog does not appear again, re-enable access in:
 
 `System Settings > Privacy & Security > Screen & System Audio Recording`
 
-## Permissions
+## 🔐 Permissions
 
 MyScreen depends on standard macOS privacy permissions:
 
@@ -103,7 +107,7 @@ MyScreen depends on standard macOS privacy permissions:
 
 Without `Screen Recording`, the monitoring wall does not start. Without `Accessibility`, the wall still works, but click-to-activate may be incomplete.
 
-## Usage
+## 🧭 Usage
 
 ### Add monitoring sources
 
@@ -130,7 +134,7 @@ MyScreen supports two kinds of sources:
 - Use the focus button in a tile header to enlarge one source.
 - Exit focus to return to the full grid wall.
 
-## How It Works
+## ⚙️ How It Works
 
 The current implementation is a native SwiftUI/AppKit macOS app.
 
@@ -151,7 +155,7 @@ Relevant entry points:
 - [Sources/MyScreen/Services/SourceCatalog/SourceCatalogService.swift](Sources/MyScreen/Services/SourceCatalog/SourceCatalogService.swift)
 - [Sources/MyScreen/Services/Capture/CaptureCoordinator.swift](Sources/MyScreen/Services/Capture/CaptureCoordinator.swift)
 
-## Project Structure
+## 🗂️ Project Structure
 
 ```text
 Sources/MyScreen/
@@ -172,7 +176,7 @@ Sources/MyScreen/
 Tests/MyScreenTests/
 ```
 
-## Development
+## 🧪 Development
 
 Build:
 
@@ -195,7 +199,7 @@ The current test suite covers:
 - Source reconciliation
 - Reorder helper behavior
 
-## Limitations
+## ⚠️ Limitations
 
 Current trade-offs in this repository:
 
@@ -207,7 +211,7 @@ Current trade-offs in this repository:
 
 If you need packaged distribution, remote access, or full recording workflows, this repository is not there yet.
 
-## Documentation
+## 📚 Documentation
 
 This README is the primary project documentation today.
 
@@ -218,7 +222,7 @@ If you are exploring the codebase, start with:
 - [Sources/MyScreen/Features/SourcePicker/SourcePickerView.swift](Sources/MyScreen/Features/SourcePicker/SourcePickerView.swift)
 - [Sources/MyScreen/Features/Wall/MonitorTileView.swift](Sources/MyScreen/Features/Wall/MonitorTileView.swift)
 
-## Contributing
+## 🤝 Contributing
 
 Contributions are welcome.
 
@@ -227,7 +231,7 @@ Contributions are welcome.
 - Keep changes scoped and testable
 - Run `swift build` and `swift test` before sending a PR
 
-## License
+## 📄 License
 
 This repository does not currently include a `LICENSE` file.
 
