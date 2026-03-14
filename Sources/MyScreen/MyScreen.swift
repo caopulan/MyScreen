@@ -55,36 +55,35 @@ private struct RootView: View {
 
 private struct FloatingWallControls: View {
     @Bindable var appState: AppState
+    @State private var isLayoutPopoverPresented = false
 
     var body: some View {
         HStack(spacing: 10) {
-            Menu {
-                Button("Auto") {
-                    appState.setPreferredColumnCount(nil)
-                }
-
-                Divider()
-
-                ForEach(1 ... 6, id: \.self) { count in
-                    Button("\(count) Columns") {
-                        appState.setPreferredColumnCount(count)
-                    }
-                }
+            Button {
+                isLayoutPopoverPresented.toggle()
             } label: {
-                FloatingIconControlButton(
-                    systemImage: "square.grid.3x3.fill"
+                FloatingGlassControlChrome(
+                    systemImage: "square.grid.3x3.fill",
+                    isActive: isLayoutPopoverPresented
                 )
             }
-            .menuStyle(.borderlessButton)
+            .buttonStyle(.plain)
             .help("Layout")
+            .popover(isPresented: $isLayoutPopoverPresented, arrowEdge: .bottom) {
+                LayoutOptionsPopover(
+                    appState: appState,
+                    isPresented: $isLayoutPopoverPresented
+                )
+            }
 
             Button {
                 Task {
                     await appState.refreshSourceCatalog()
                 }
             } label: {
-                FloatingIconControlButton(
-                    systemImage: appState.isRefreshingSourceCatalog ? "arrow.trianglehead.2.clockwise.rotate.90" : "arrow.clockwise"
+                FloatingGlassControlChrome(
+                    systemImage: appState.isRefreshingSourceCatalog ? "arrow.trianglehead.2.clockwise.rotate.90" : "arrow.clockwise",
+                    isDisabled: appState.isRefreshingSourceCatalog
                 )
             }
             .buttonStyle(.plain)
@@ -94,7 +93,7 @@ private struct FloatingWallControls: View {
             Button {
                 appState.isSourcePickerPresented = true
             } label: {
-                FloatingIconControlButton(systemImage: "plus")
+                FloatingGlassControlChrome(systemImage: "plus")
             }
             .buttonStyle(.plain)
             .help("Add")
@@ -102,23 +101,92 @@ private struct FloatingWallControls: View {
     }
 }
 
-private struct FloatingIconControlButton: View {
+private struct FloatingGlassControlChrome: View {
     let systemImage: String
+    var isActive = false
+    var isDisabled = false
 
     var body: some View {
-        Image(systemName: systemImage)
-            .font(.system(size: 15, weight: .semibold))
-            .foregroundStyle(Color.black.opacity(0.72))
-            .frame(width: 42, height: 36)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color.white.opacity(0.22))
+        ZStack {
+            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                .fill(.ultraThinMaterial)
+
+            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(isActive ? 0.36 : 0.28),
+                            Color.white.opacity(isActive ? 0.22 : 0.16),
+                            Color.white.opacity(0.08),
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+
+            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                .strokeBorder(
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(isActive ? 0.92 : 0.82),
+                            Color.white.opacity(0.36),
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1
+                )
+
+            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                .stroke(Color.white.opacity(0.18), lineWidth: 0.5)
+                .blur(radius: 1.2)
+                .mask(
+                    VStack(spacing: 0) {
+                        Rectangle().frame(height: 14)
+                        Spacer(minLength: 0)
+                    }
+                )
+
+            Image(systemName: systemImage)
+                .font(.system(size: 15, weight: .bold))
+                .foregroundStyle(Color.black.opacity(isDisabled ? 0.34 : 0.7))
+        }
+        .frame(width: 44, height: 38)
+        .shadow(color: .black.opacity(isActive ? 0.16 : 0.12), radius: 16, y: 10)
+        .opacity(isDisabled ? 0.78 : 1)
+    }
+}
+
+private struct LayoutOptionsPopover: View {
+    @Bindable var appState: AppState
+    @Binding var isPresented: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            layoutOptionButton(title: "Auto", preferredColumnCount: nil)
+
+            Divider()
+
+            ForEach(1 ... 6, id: \.self) { count in
+                layoutOptionButton(title: "\(count) Columns", preferredColumnCount: count)
             }
-            .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(Color.white.opacity(0.55), lineWidth: 1)
-            }
-            .shadow(color: .black.opacity(0.2), radius: 14, y: 8)
+        }
+        .padding(12)
+        .frame(width: 140)
+    }
+
+    private func layoutOptionButton(title: String, preferredColumnCount: Int?) -> some View {
+        Button(title) {
+            appState.setPreferredColumnCount(preferredColumnCount)
+            isPresented = false
+        }
+        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.black.opacity(appState.wallLayout.preferredColumnCount == preferredColumnCount ? 0.08 : 0.0001))
+        )
     }
 }
