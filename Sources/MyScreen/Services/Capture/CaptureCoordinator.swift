@@ -133,6 +133,39 @@ private enum CaptureTarget {
         configuration.height = max(configuration.height, 200)
         return configuration
     }
+
+    func snapshotImage(previewMaxDimension: Int, ciContext: CIContext) -> NSImage? {
+        let baseImage: CGImage?
+
+        switch self {
+        case .display(let display):
+            baseImage = CGDisplayCreateImage(display.displayID)
+        case .window(let window):
+            baseImage = CGWindowListCreateImage(
+                .null,
+                .optionIncludingWindow,
+                window.windowID,
+                [.bestResolution, .boundsIgnoreFraming]
+            )
+        }
+
+        guard let baseImage else { return nil }
+        let scaledImage = scaleIfNeeded(baseImage, maxDimension: previewMaxDimension, ciContext: ciContext)
+        return NSImage(cgImage: scaledImage, size: NSSize(width: scaledImage.width, height: scaledImage.height))
+    }
+
+    private func scaleIfNeeded(_ image: CGImage, maxDimension: Int, ciContext: CIContext) -> CGImage {
+        let width = CGFloat(image.width)
+        let height = CGFloat(image.height)
+        let longestSide = max(width, height)
+        guard longestSide > CGFloat(maxDimension), longestSide > 0 else {
+            return image
+        }
+
+        let scale = CGFloat(maxDimension) / longestSide
+        let ciImage = CIImage(cgImage: image).transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+        return ciContext.createCGImage(ciImage, from: ciImage.extent) ?? image
+    }
 }
 
 private final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
@@ -146,6 +179,10 @@ private final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate, 
 
     private var stream: SCStream?
     private var currentMode: CaptureDeliveryMode = .polling(interval: 2.0)
+    private var currentTarget: CaptureTarget?
+    private var currentPreviewMaxDimension = 640
+    private var snapshotTask: Task<Void, Never>?
+    private var lastDeliveredFrameAt: Date?
 
     init(
         sourceID: String,
@@ -165,7 +202,8 @@ private final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate, 
         let configuration = target.streamConfiguration(mode: mode, previewMaxDimension: previewMaxDimension)
         let stream = SCStream(filter: filter, configuration: configuration, delegate: self)
         try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: sampleQueue)
-        setCurrentMode(mode)
+        updateSnapshotState(target: target, mode: mode, previewMaxDimension: previewMaxDimension)
+        ensureSnapshotTask()
         self.stream = stream
         try await stream.startCapture()
     }
@@ -176,7 +214,8 @@ private final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate, 
             return
         }
 
-        setCurrentMode(mode)
+        updateSnapshotState(target: target, mode: mode, previewMaxDimension: previewMaxDimension)
+        ensureSnapshotTask()
         try await stream.updateContentFilter(target.contentFilter())
         try await stream.updateConfiguration(
             target.streamConfiguration(mode: mode, previewMaxDimension: previewMaxDimension)
@@ -184,6 +223,8 @@ private final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate, 
     }
 
     func stop() async {
+        snapshotTask?.cancel()
+        snapshotTask = nil
         guard let stream else { return }
         self.stream = nil
         do {
@@ -196,9 +237,9 @@ private final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate, 
     }
 
     func stream(_ stream: SCStream, didStopWithError error: any Error) {
+        self.stream = nil
         DispatchQueue.main.async {
             self.onError(self.sourceID, error.localizedDescription)
-            self.onOffline(self.sourceID)
         }
     }
 
@@ -211,22 +252,88 @@ private final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate, 
         let image = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
         let tier = currentModeTier()
         let frame = PreviewFrame(image: image, createdAt: Date())
+        recordDeliveredFrame(at: frame.createdAt)
 
         DispatchQueue.main.async {
             self.onFrame(self.sourceID, frame, tier)
         }
     }
 
-    private func setCurrentMode(_ mode: CaptureDeliveryMode) {
+    private func updateSnapshotState(target: CaptureTarget, mode: CaptureDeliveryMode, previewMaxDimension: Int) {
         stateLock.lock()
         defer { stateLock.unlock() }
+        currentTarget = target
         currentMode = mode
+        currentPreviewMaxDimension = previewMaxDimension
     }
 
     private func currentModeTier() -> TileFrameRateTier {
         stateLock.lock()
         defer { stateLock.unlock() }
         return currentMode.tileFrameRateTier
+    }
+
+    private func recordDeliveredFrame(at date: Date) {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        lastDeliveredFrameAt = date
+    }
+
+    private func snapshotState() -> (target: CaptureTarget, mode: CaptureDeliveryMode, previewMaxDimension: Int, lastDeliveredFrameAt: Date?)? {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        guard let currentTarget else { return nil }
+        return (currentTarget, currentMode, currentPreviewMaxDimension, lastDeliveredFrameAt)
+    }
+
+    private func ensureSnapshotTask() {
+        guard snapshotTask == nil else { return }
+
+        snapshotTask = Task { [weak self] in
+            guard let self else { return }
+            while !Task.isCancelled {
+                guard let state = self.snapshotState() else { return }
+                let interval = self.snapshotInterval(for: state.mode)
+
+                if let lastDeliveredFrameAt = state.lastDeliveredFrameAt,
+                   Date().timeIntervalSince(lastDeliveredFrameAt) < interval * 1.2 {
+                    do {
+                        try await Task.sleep(for: .seconds(interval))
+                    } catch {
+                        return
+                    }
+                    continue
+                }
+
+                if let image = state.target.snapshotImage(previewMaxDimension: state.previewMaxDimension, ciContext: self.ciContext) {
+                    let frame = PreviewFrame(image: image, createdAt: Date())
+                    self.recordDeliveredFrame(at: frame.createdAt)
+                    let tier = state.mode.tileFrameRateTier
+                    await MainActor.run {
+                        self.onFrame(self.sourceID, frame, tier)
+                    }
+                } else if state.lastDeliveredFrameAt == nil || Date().timeIntervalSince(state.lastDeliveredFrameAt!) > 3 {
+                    await MainActor.run {
+                        self.onOffline(self.sourceID)
+                    }
+                }
+
+                do {
+                    try await Task.sleep(for: .seconds(interval))
+                } catch {
+                    return
+                }
+            }
+        }
+    }
+
+    private func snapshotInterval(for mode: CaptureDeliveryMode) -> TimeInterval {
+        switch mode {
+        case .live(let framesPerSecond):
+            return max(0.5, 1.0 / Double(max(framesPerSecond / 2, 1)))
+        case .polling(let interval):
+            return max(interval, 1.0)
+        }
     }
 }
 
