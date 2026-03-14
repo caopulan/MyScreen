@@ -45,8 +45,8 @@ actor SourceCatalogService {
                     title: title,
                     bundleIdentifier: app.bundleIdentifier,
                     processID: snapshot.ownerPID,
-                    isAvailable: true,
-                    lastSeenAt: now
+                    isAvailable: snapshot.isOnScreen,
+                    lastSeenAt: snapshot.isOnScreen ? now : nil
                 )
             }
             .sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
@@ -64,7 +64,6 @@ actor SourceCatalogService {
     }
 
     private func shouldIncludeWindow(snapshot: WindowSnapshot, app: NSRunningApplication) -> Bool {
-        guard !snapshot.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
         guard snapshot.layer == 0 else { return false }
         guard snapshot.alpha > 0.03 else { return false }
         guard snapshot.bounds.width >= 160, snapshot.bounds.height >= 100 else { return false }
@@ -73,7 +72,7 @@ actor SourceCatalogService {
     }
 
     private func currentWindowSnapshots() -> [WindowSnapshot] {
-        guard let windowInfoList = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else {
+        guard let windowInfoList = CGWindowListCopyWindowInfo([.optionAll, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else {
             return []
         }
 
@@ -85,6 +84,7 @@ actor SourceCatalogService {
 
             let layer = (info[kCGWindowLayer as String] as? NSNumber)?.intValue ?? 0
             let alpha = (info[kCGWindowAlpha as String] as? NSNumber)?.doubleValue ?? 1
+            let isOnScreen = (info[kCGWindowIsOnscreen as String] as? NSNumber)?.boolValue ?? false
             let boundsPayload = info[kCGWindowBounds as String] as? [String: Any]
             let bounds = boundsPayload.flatMap { CGRect(dictionaryRepresentation: $0 as CFDictionary) } ?? .zero
             let ownerName = info[kCGWindowOwnerName as String] as? String
@@ -95,6 +95,7 @@ actor SourceCatalogService {
                 ownerPID: ownerPID.int32Value,
                 ownerName: ownerName,
                 title: title,
+                isOnScreen: isOnScreen,
                 layer: layer,
                 alpha: alpha,
                 bounds: bounds
@@ -108,6 +109,7 @@ private struct WindowSnapshot {
     var ownerPID: Int32
     var ownerName: String?
     var title: String
+    var isOnScreen: Bool
     var layer: Int
     var alpha: Double
     var bounds: CGRect

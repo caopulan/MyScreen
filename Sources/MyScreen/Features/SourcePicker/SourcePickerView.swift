@@ -30,7 +30,7 @@ struct SourcePickerView: View {
 
                     SourcePickerSection(
                         title: "Windows",
-                        subtitle: "Visible app windows. Offline windows are hidden by default."
+                        subtitle: "Visible app windows on the current desktop."
                     ) {
                         if filteredOnlineWindows.isEmpty {
                             emptyState("No visible windows match the current filter")
@@ -45,7 +45,7 @@ struct SourcePickerView: View {
                                 .padding(.top, 12)
                         } label: {
                             HStack {
-                                Text("Offline Windows")
+                                Text("Hidden or Other-Space Windows")
                                     .font(.headline)
                                 Spacer()
                                 Text("\(filteredOfflineWindows.count)")
@@ -220,7 +220,7 @@ private struct SourcePickerCard: View {
             .frame(height: 128)
 
             HStack {
-                Text(source.isAvailable ? "Online" : "Offline")
+                Text(source.isAvailable ? "Visible" : "Hidden")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(source.isAvailable ? .green : .red)
 
