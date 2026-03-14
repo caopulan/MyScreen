@@ -1,8 +1,6 @@
 import AppKit
 import CoreImage
-import CoreMedia
 import Foundation
-@preconcurrency import ScreenCaptureKit
 
 @MainActor
 final class CaptureCoordinator {
@@ -13,21 +11,6 @@ final class CaptureCoordinator {
     private var sessions: [String: CaptureSession] = [:]
 
     func sync(sources: [MonitorSource], focusSourceID: String?) async {
-        guard !sources.isEmpty else {
-            await stopAll()
-            return
-        }
-
-        let targetMap: [String: CaptureTarget]
-        do {
-            targetMap = try await currentTargetMap()
-        } catch {
-            for source in sources {
-                onError?(source.id, error.localizedDescription)
-            }
-            return
-        }
-
         let plan = CaptureBudgetPlanner.plan(for: sources, focusSourceID: focusSourceID)
         let validIDs = Set(sources.map(\.id))
 
@@ -37,7 +20,7 @@ final class CaptureCoordinator {
         }
 
         for source in sources {
-            guard source.isAvailable, let target = targetMap[source.id] else {
+            guard let target = CaptureTarget(source: source), source.isAvailable else {
                 if let session = sessions[source.id] {
                     await session.stop()
                     sessions.removeValue(forKey: source.id)
@@ -48,27 +31,23 @@ final class CaptureCoordinator {
 
             let mode = plan.deliveryModes[source.id] ?? .polling(interval: 2.0)
 
-            do {
-                if let session = sessions[source.id] {
-                    try await session.update(target: target, mode: mode, previewMaxDimension: plan.previewMaxDimension)
-                } else {
-                    let session = CaptureSession(
-                        sourceID: source.id,
-                        onFrame: { [weak self] sourceID, frame, tier in
-                            self?.onFrame?(sourceID, frame, tier)
-                        },
-                        onError: { [weak self] sourceID, message in
-                            self?.onError?(sourceID, message)
-                        },
-                        onOffline: { [weak self] sourceID in
-                            self?.onOffline?(sourceID)
-                        }
-                    )
-                    sessions[source.id] = session
-                    try await session.start(target: target, mode: mode, previewMaxDimension: plan.previewMaxDimension)
-                }
-            } catch {
-                onError?(source.id, error.localizedDescription)
+            if let session = sessions[source.id] {
+                session.update(target: target, mode: mode, previewMaxDimension: plan.previewMaxDimension)
+            } else {
+                let session = CaptureSession(
+                    sourceID: source.id,
+                    onFrame: { [weak self] sourceID, frame, tier in
+                        self?.onFrame?(sourceID, frame, tier)
+                    },
+                    onError: { [weak self] sourceID, message in
+                        self?.onError?(sourceID, message)
+                    },
+                    onOffline: { [weak self] sourceID in
+                        self?.onOffline?(sourceID)
+                    }
+                )
+                session.start(target: target, mode: mode, previewMaxDimension: plan.previewMaxDimension)
+                sessions[source.id] = session
             }
         }
     }
@@ -79,72 +58,34 @@ final class CaptureCoordinator {
         }
         sessions.removeAll()
     }
-
-    private func currentTargetMap() async throws -> [String: CaptureTarget] {
-        let content = try await SCShareableContent.current
-        var targetMap: [String: CaptureTarget] = [:]
-
-        for display in content.displays {
-            targetMap[MonitorSource.displayIdentity(display.displayID)] = .display(display)
-        }
-
-        for window in content.windows {
-            targetMap[MonitorSource.windowIdentity(window.windowID)] = .window(window)
-        }
-
-        return targetMap
-    }
 }
 
 private enum CaptureTarget {
-    case display(SCDisplay)
-    case window(SCWindow)
+    case display(CGDirectDisplayID)
+    case window(CGWindowID)
 
-    func contentFilter() -> SCContentFilter {
-        switch self {
-        case .display(let display):
-            SCContentFilter(display: display, excludingWindows: [])
-        case .window(let window):
-            SCContentFilter(desktopIndependentWindow: window)
+    init?(source: MonitorSource) {
+        switch source.kind {
+        case .display:
+            guard let displayID = source.displayID else { return nil }
+            self = .display(displayID)
+        case .window:
+            guard let windowID = source.windowID else { return nil }
+            self = .window(windowID)
         }
-    }
-
-    func streamConfiguration(mode: CaptureDeliveryMode, previewMaxDimension: Int) -> SCStreamConfiguration {
-        let configuration = SCStreamConfiguration()
-        configuration.minimumFrameInterval = mode.minimumFrameInterval
-        configuration.queueDepth = 2
-        configuration.showsCursor = true
-        configuration.capturesAudio = false
-
-        switch self {
-        case .display(let display):
-            let scale = CGFloat(previewMaxDimension) / CGFloat(max(display.width, display.height))
-            configuration.width = Int(CGFloat(display.width) * min(scale, 1))
-            configuration.height = Int(CGFloat(display.height) * min(scale, 1))
-        case .window(let window):
-            let frame = window.frame
-            let maxDimension = max(frame.width, frame.height)
-            let scale = maxDimension > 0 ? CGFloat(previewMaxDimension) / maxDimension : 1
-            configuration.width = Int(frame.width * min(scale, 1))
-            configuration.height = Int(frame.height * min(scale, 1))
-        }
-
-        configuration.width = max(configuration.width, 320)
-        configuration.height = max(configuration.height, 200)
-        return configuration
     }
 
     func snapshotImage(previewMaxDimension: Int, ciContext: CIContext) -> NSImage? {
         let baseImage: CGImage?
 
         switch self {
-        case .display(let display):
-            baseImage = CGDisplayCreateImage(display.displayID)
-        case .window(let window):
+        case .display(let displayID):
+            baseImage = CGDisplayCreateImage(displayID)
+        case .window(let windowID):
             baseImage = CGWindowListCreateImage(
                 .null,
                 .optionIncludingWindow,
-                window.windowID,
+                windowID,
                 [.bestResolution, .boundsIgnoreFraming]
             )
         }
@@ -168,21 +109,18 @@ private enum CaptureTarget {
     }
 }
 
-private final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
+private final class CaptureSession: @unchecked Sendable {
     private let sourceID: String
     private let onFrame: @MainActor (String, PreviewFrame, TileFrameRateTier) -> Void
     private let onError: @MainActor (String, String) -> Void
     private let onOffline: @MainActor (String) -> Void
-    private let sampleQueue: DispatchQueue
     private let ciContext = CIContext()
     private let stateLock = NSLock()
 
-    private var stream: SCStream?
-    private var currentMode: CaptureDeliveryMode = .polling(interval: 2.0)
     private var currentTarget: CaptureTarget?
+    private var currentMode: CaptureDeliveryMode = .polling(interval: 2.0)
     private var currentPreviewMaxDimension = 640
-    private var snapshotTask: Task<Void, Never>?
-    private var lastDeliveredFrameAt: Date?
+    private var captureTask: Task<Void, Never>?
 
     init(
         sourceID: String,
@@ -194,132 +132,48 @@ private final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate, 
         self.onFrame = onFrame
         self.onError = onError
         self.onOffline = onOffline
-        self.sampleQueue = DispatchQueue(label: "myscreen.capture.\(sourceID)", qos: .userInitiated)
     }
 
-    func start(target: CaptureTarget, mode: CaptureDeliveryMode, previewMaxDimension: Int) async throws {
-        let filter = target.contentFilter()
-        let configuration = target.streamConfiguration(mode: mode, previewMaxDimension: previewMaxDimension)
-        let stream = SCStream(filter: filter, configuration: configuration, delegate: self)
-        try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: sampleQueue)
-        updateSnapshotState(target: target, mode: mode, previewMaxDimension: previewMaxDimension)
-        ensureSnapshotTask()
-        self.stream = stream
-        try await stream.startCapture()
+    func start(target: CaptureTarget, mode: CaptureDeliveryMode, previewMaxDimension: Int) {
+        update(target: target, mode: mode, previewMaxDimension: previewMaxDimension)
+        ensureCaptureTask()
     }
 
-    func update(target: CaptureTarget, mode: CaptureDeliveryMode, previewMaxDimension: Int) async throws {
-        guard let stream else {
-            try await start(target: target, mode: mode, previewMaxDimension: previewMaxDimension)
-            return
-        }
-
-        updateSnapshotState(target: target, mode: mode, previewMaxDimension: previewMaxDimension)
-        ensureSnapshotTask()
-        try await stream.updateContentFilter(target.contentFilter())
-        try await stream.updateConfiguration(
-            target.streamConfiguration(mode: mode, previewMaxDimension: previewMaxDimension)
-        )
-    }
-
-    func stop() async {
-        snapshotTask?.cancel()
-        snapshotTask = nil
-        guard let stream else { return }
-        self.stream = nil
-        do {
-            try await stream.stopCapture()
-        } catch {
-            await MainActor.run {
-                onError(sourceID, error.localizedDescription)
-            }
-        }
-    }
-
-    func stream(_ stream: SCStream, didStopWithError error: any Error) {
-        self.stream = nil
-        DispatchQueue.main.async {
-            self.onError(self.sourceID, error.localizedDescription)
-        }
-    }
-
-    func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of outputType: SCStreamOutputType) {
-        guard outputType == .screen else { return }
-        guard CMSampleBufferIsValid(sampleBuffer), let imageBuffer = sampleBuffer.imageBuffer else { return }
-
-        let ciImage = CIImage(cvImageBuffer: imageBuffer)
-        guard let cgImage = ciContext.createCGImage(ciImage, from: ciImage.extent) else { return }
-        let image = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
-        let tier = currentModeTier()
-        let frame = PreviewFrame(image: image, createdAt: Date())
-        recordDeliveredFrame(at: frame.createdAt)
-
-        DispatchQueue.main.async {
-            self.onFrame(self.sourceID, frame, tier)
-        }
-    }
-
-    private func updateSnapshotState(target: CaptureTarget, mode: CaptureDeliveryMode, previewMaxDimension: Int) {
+    func update(target: CaptureTarget, mode: CaptureDeliveryMode, previewMaxDimension: Int) {
         stateLock.lock()
-        defer { stateLock.unlock() }
         currentTarget = target
         currentMode = mode
         currentPreviewMaxDimension = previewMaxDimension
+        stateLock.unlock()
+        ensureCaptureTask()
     }
 
-    private func currentModeTier() -> TileFrameRateTier {
-        stateLock.lock()
-        defer { stateLock.unlock() }
-        return currentMode.tileFrameRateTier
+    func stop() async {
+        captureTask?.cancel()
+        captureTask = nil
     }
 
-    private func recordDeliveredFrame(at date: Date) {
-        stateLock.lock()
-        defer { stateLock.unlock() }
-        lastDeliveredFrameAt = date
-    }
+    private func ensureCaptureTask() {
+        guard captureTask == nil else { return }
 
-    private func snapshotState() -> (target: CaptureTarget, mode: CaptureDeliveryMode, previewMaxDimension: Int, lastDeliveredFrameAt: Date?)? {
-        stateLock.lock()
-        defer { stateLock.unlock() }
-        guard let currentTarget else { return nil }
-        return (currentTarget, currentMode, currentPreviewMaxDimension, lastDeliveredFrameAt)
-    }
-
-    private func ensureSnapshotTask() {
-        guard snapshotTask == nil else { return }
-
-        snapshotTask = Task { [weak self] in
+        captureTask = Task.detached(priority: .userInitiated) { [weak self] in
             guard let self else { return }
             while !Task.isCancelled {
                 guard let state = self.snapshotState() else { return }
-                let interval = self.snapshotInterval(for: state.mode)
-
-                if let lastDeliveredFrameAt = state.lastDeliveredFrameAt,
-                   Date().timeIntervalSince(lastDeliveredFrameAt) < interval * 1.2 {
-                    do {
-                        try await Task.sleep(for: .seconds(interval))
-                    } catch {
-                        return
-                    }
-                    continue
-                }
 
                 if let image = state.target.snapshotImage(previewMaxDimension: state.previewMaxDimension, ciContext: self.ciContext) {
                     let frame = PreviewFrame(image: image, createdAt: Date())
-                    self.recordDeliveredFrame(at: frame.createdAt)
-                    let tier = state.mode.tileFrameRateTier
                     await MainActor.run {
-                        self.onFrame(self.sourceID, frame, tier)
+                        self.onFrame(self.sourceID, frame, state.mode.tileFrameRateTier)
                     }
-                } else if state.lastDeliveredFrameAt == nil || Date().timeIntervalSince(state.lastDeliveredFrameAt!) > 3 {
+                } else {
                     await MainActor.run {
                         self.onOffline(self.sourceID)
                     }
                 }
 
                 do {
-                    try await Task.sleep(for: .seconds(interval))
+                    try await Task.sleep(for: .seconds(self.interval(for: state.mode)))
                 } catch {
                     return
                 }
@@ -327,10 +181,17 @@ private final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate, 
         }
     }
 
-    private func snapshotInterval(for mode: CaptureDeliveryMode) -> TimeInterval {
+    private func snapshotState() -> (target: CaptureTarget, mode: CaptureDeliveryMode, previewMaxDimension: Int)? {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        guard let currentTarget else { return nil }
+        return (currentTarget, currentMode, currentPreviewMaxDimension)
+    }
+
+    private func interval(for mode: CaptureDeliveryMode) -> TimeInterval {
         switch mode {
         case .live(let framesPerSecond):
-            return max(0.5, 1.0 / Double(max(framesPerSecond / 2, 1)))
+            return max(0.18, 1.0 / Double(max(framesPerSecond, 1)))
         case .polling(let interval):
             return max(interval, 1.0)
         }

@@ -1,125 +1,100 @@
 import AppKit
 import CoreGraphics
 import Foundation
-@preconcurrency import ScreenCaptureKit
-
-enum SourceCatalogServiceError: LocalizedError {
-    case unavailableContent
-
-    var errorDescription: String? {
-        switch self {
-        case .unavailableContent:
-            "Unable to enumerate shareable displays and windows."
-        }
-    }
-}
 
 actor SourceCatalogService {
     func fetchCatalog() async throws -> SourceCatalog {
-        let content = try await SCShareableContent.current
         let now = Date()
         let currentBundleID = Bundle.main.bundleIdentifier
+        let currentProcessID = ProcessInfo.processInfo.processIdentifier
         let appMap = NSWorkspace.shared.runningApplications.reduce(into: [Int32: NSRunningApplication]()) { partialResult, application in
             partialResult[application.processIdentifier] = application
         }
-        let windowSnapshots = currentWindowSnapshots()
 
-        let displays = content.displays
-            .map { display in
-                MonitorSource.display(
-                    displayID: display.displayID,
-                    title: displayTitle(for: display),
+        let displays = NSScreen.screens.compactMap { screen -> MonitorSource? in
+            guard let displayID = displayID(for: screen) else {
+                return nil
+            }
+
+            let width = CGDisplayPixelsWide(displayID)
+            let height = CGDisplayPixelsHigh(displayID)
+            let title = "\(screen.localizedName) · \(width)×\(height)"
+
+            return MonitorSource.display(
+                displayID: displayID,
+                title: title,
+                isAvailable: true,
+                lastSeenAt: now
+            )
+        }
+        .sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
+
+        let windows = currentWindowSnapshots()
+            .compactMap { snapshot -> MonitorSource? in
+                guard snapshot.ownerPID != currentProcessID else { return nil }
+                guard let app = appMap[snapshot.ownerPID] else { return nil }
+                guard app.bundleIdentifier != currentBundleID else { return nil }
+                guard shouldIncludeWindow(snapshot: snapshot, app: app) else { return nil }
+
+                let appName = app.localizedName ?? snapshot.ownerName ?? "Unknown App"
+                let windowTitle = snapshot.title.trimmingCharacters(in: .whitespacesAndNewlines)
+                let title = windowTitle.isEmpty || windowTitle == appName ? appName : "\(appName) — \(windowTitle)"
+
+                return MonitorSource.window(
+                    windowID: snapshot.windowID,
+                    title: title,
+                    bundleIdentifier: app.bundleIdentifier,
+                    processID: snapshot.ownerPID,
                     isAvailable: true,
                     lastSeenAt: now
                 )
             }
             .sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
 
-        let windows = content.windows
-            .compactMap { window -> MonitorSource? in
-                let application = window.owningApplication
-                if application?.bundleIdentifier == currentBundleID {
-                    return nil
-                }
-
-                let snapshot = windowSnapshots[window.windowID]
-                let processID = application?.processID ?? snapshot?.ownerPID
-                let workspaceApplication = processID.flatMap { appMap[$0] }
-                let appName = application?.applicationName ?? workspaceApplication?.localizedName ?? "Unknown App"
-                let bundleID = application?.bundleIdentifier ?? workspaceApplication?.bundleIdentifier
-                let windowTitle = (window.title ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                let title = windowTitle.isEmpty || windowTitle == appName ? appName : "\(appName) — \(windowTitle)"
-                let isAvailable = snapshot?.isOnScreen ?? window.isOnScreen
-
-                guard shouldIncludeWindow(
-                    title: title,
-                    bundleIdentifier: bundleID,
-                    snapshot: snapshot,
-                    frame: window.frame
-                ) else {
-                    return nil
-                }
-
-                return MonitorSource.window(
-                    windowID: window.windowID,
-                    title: title,
-                    bundleIdentifier: bundleID,
-                    processID: processID,
-                    isAvailable: isAvailable,
-                    lastSeenAt: isAvailable ? now : nil
-                )
-            }
-            .sorted { lhs, rhs in
-                lhs.title.localizedStandardCompare(rhs.title) == .orderedAscending
-            }
-
         return SourceCatalog(displays: displays, windows: windows)
     }
 
-    private func displayTitle(for display: SCDisplay) -> String {
-        "Display \(display.displayID) · \(display.width)×\(display.height)"
-    }
-
-    private func shouldIncludeWindow(
-        title: String,
-        bundleIdentifier: String?,
-        snapshot: WindowSnapshot?,
-        frame: CGRect
-    ) -> Bool {
-        guard bundleIdentifier != nil else { return false }
-        guard !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
-        guard frame.width >= 160, frame.height >= 100 else { return false }
-
-        if let snapshot {
-            guard snapshot.layer == 0 else { return false }
-            guard snapshot.alpha > 0.03 else { return false }
-            guard snapshot.bounds.width >= 160, snapshot.bounds.height >= 100 else { return false }
+    private func displayID(for screen: NSScreen) -> CGDirectDisplayID? {
+        let key = NSDeviceDescriptionKey("NSScreenNumber")
+        guard let screenNumber = screen.deviceDescription[key] as? NSNumber else {
+            return nil
         }
 
+        return CGDirectDisplayID(screenNumber.uint32Value)
+    }
+
+    private func shouldIncludeWindow(snapshot: WindowSnapshot, app: NSRunningApplication) -> Bool {
+        guard !snapshot.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+        guard snapshot.layer == 0 else { return false }
+        guard snapshot.alpha > 0.03 else { return false }
+        guard snapshot.bounds.width >= 160, snapshot.bounds.height >= 100 else { return false }
+        guard app.activationPolicy != .prohibited else { return false }
         return true
     }
 
-    private func currentWindowSnapshots() -> [UInt32: WindowSnapshot] {
-        guard let windowInfoList = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String: Any]] else {
-            return [:]
+    private func currentWindowSnapshots() -> [WindowSnapshot] {
+        guard let windowInfoList = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else {
+            return []
         }
 
-        return windowInfoList.reduce(into: [UInt32: WindowSnapshot]()) { partialResult, info in
-            guard let rawWindowID = info[kCGWindowNumber as String] as? NSNumber else {
-                return
+        return windowInfoList.compactMap { info in
+            guard let rawWindowID = info[kCGWindowNumber as String] as? NSNumber,
+                  let ownerPID = info[kCGWindowOwnerPID as String] as? NSNumber else {
+                return nil
             }
 
-            let windowID = rawWindowID.uint32Value
-            let ownerPID = (info[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value
-            let isOnScreen = (info[kCGWindowIsOnscreen as String] as? NSNumber)?.boolValue ?? false
             let layer = (info[kCGWindowLayer as String] as? NSNumber)?.intValue ?? 0
             let alpha = (info[kCGWindowAlpha as String] as? NSNumber)?.doubleValue ?? 1
             let boundsPayload = info[kCGWindowBounds as String] as? [String: Any]
             let bounds = boundsPayload.flatMap { CGRect(dictionaryRepresentation: $0 as CFDictionary) } ?? .zero
+            let ownerName = info[kCGWindowOwnerName as String] as? String
+            let title = (info[kCGWindowName as String] as? String) ?? ""
 
-            partialResult[windowID] = WindowSnapshot(
-                ownerPID: ownerPID,
-                isOnScreen: isOnScreen,
+            return WindowSnapshot(
+                windowID: rawWindowID.uint32Value,
+                ownerPID: ownerPID.int32Value,
+                ownerName: ownerName,
+                title: title,
                 layer: layer,
                 alpha: alpha,
                 bounds: bounds
@@ -129,8 +104,10 @@ actor SourceCatalogService {
 }
 
 private struct WindowSnapshot {
-    var ownerPID: Int32?
-    var isOnScreen: Bool
+    var windowID: UInt32
+    var ownerPID: Int32
+    var ownerName: String?
+    var title: String
     var layer: Int
     var alpha: Double
     var bounds: CGRect
