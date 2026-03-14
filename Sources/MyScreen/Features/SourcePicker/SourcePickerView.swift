@@ -5,6 +5,7 @@ struct SourcePickerView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var searchText = ""
     @State private var showsOfflineWindows = false
+    @State private var previewFrames: [String: PreviewFrame] = [:]
 
     var body: some View {
         NavigationStack {
@@ -83,8 +84,14 @@ struct SourcePickerView: View {
                     await appState.refreshSourceCatalog()
                 }
             }
+            .task(id: previewTaskID) {
+                await refreshPreviewsLoop()
+            }
         }
         .frame(minWidth: 960, minHeight: 620)
+        .onDisappear {
+            previewFrames = [:]
+        }
     }
 
     private var filteredDisplays: [MonitorSource] {
@@ -97,6 +104,14 @@ struct SourcePickerView: View {
 
     private var filteredOfflineWindows: [MonitorSource] {
         filter(appState.sourceCatalog.offlineWindows)
+    }
+
+    private var previewSources: [MonitorSource] {
+        filteredDisplays + filteredOnlineWindows + (showsOfflineWindows ? filteredOfflineWindows : [])
+    }
+
+    private var previewTaskID: String {
+        previewSources.map(\.id).joined(separator: "|") + "::" + searchText + "::" + String(showsOfflineWindows)
     }
 
     private func filter(_ sources: [MonitorSource]) -> [MonitorSource] {
@@ -129,6 +144,7 @@ struct SourcePickerView: View {
             ForEach(sources) { source in
                 SourcePickerCard(
                     source: source,
+                    previewFrame: previewFrames[source.id],
                     isSelected: appState.isSelected(sourceID: source.id),
                     onToggleSelection: {
                         appState.toggleSelection(for: source)
@@ -152,6 +168,42 @@ struct SourcePickerView: View {
                 Label("Refresh", systemImage: "arrow.clockwise")
             }
         }
+    }
+
+    private func refreshPreviewsLoop() async {
+        await refreshPreviews()
+
+        while !Task.isCancelled {
+            do {
+                try await Task.sleep(for: .seconds(0.9))
+            } catch {
+                return
+            }
+            await refreshPreviews()
+        }
+    }
+
+    private func refreshPreviews() async {
+        let sources = previewSources
+        guard !sources.isEmpty else {
+            previewFrames = [:]
+            return
+        }
+
+        let frames = await Task.detached(priority: .userInitiated) { () -> [String: PreviewFrame] in
+            var result: [String: PreviewFrame] = [:]
+
+            for source in sources {
+                if let image = SourcePreviewService.snapshotImage(for: source, maxDimension: 520) {
+                    result[source.id] = PreviewFrame(image: image, createdAt: Date())
+                }
+            }
+
+            return result
+        }.value
+
+        guard !Task.isCancelled else { return }
+        previewFrames = frames
     }
 }
 
@@ -183,6 +235,7 @@ private struct SourcePickerSection<Content: View>: View {
 
 private struct SourcePickerCard: View {
     let source: MonitorSource
+    let previewFrame: PreviewFrame?
     let isSelected: Bool
     let onToggleSelection: () -> Void
 
@@ -208,12 +261,21 @@ private struct SourcePickerCard: View {
                 RoundedRectangle(cornerRadius: 14)
                     .fill(Color(nsColor: .controlBackgroundColor))
 
-                VStack(spacing: 10) {
-                    Image(systemName: source.kind == .display ? "display.2" : "macwindow.on.rectangle")
-                        .font(.system(size: 30, weight: .medium))
-                    Text(source.kind == .display ? "Display feed" : "Window feed")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                if let previewImage = previewFrame?.image {
+                    Image(nsImage: previewImage)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .clipped()
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                } else {
+                    VStack(spacing: 10) {
+                        Image(systemName: source.kind == .display ? "display.2" : "macwindow.on.rectangle")
+                            .font(.system(size: 30, weight: .medium))
+                        Text(placeholderText)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
             .frame(height: 128)
@@ -245,5 +307,12 @@ private struct SourcePickerCard: View {
         let pidText = source.processID.map { "pid \($0)" } ?? "pid -"
         let bundleText = source.bundleIdentifier ?? "display source"
         return "\(source.kind.displayName) · \(pidText) · \(bundleText)"
+    }
+
+    private var placeholderText: String {
+        if source.kind == .window && !source.isAvailable {
+            return "No preview while hidden"
+        }
+        return source.kind == .display ? "Display feed" : "Window feed"
     }
 }
