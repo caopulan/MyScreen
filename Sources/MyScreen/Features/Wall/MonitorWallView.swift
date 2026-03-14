@@ -5,8 +5,10 @@ struct MonitorWallView: View {
     @Bindable var appState: AppState
     @State private var draggedSourceID: String?
     @State private var dropTargetSourceID: String?
+    @State private var tileFrames: [String: CGRect] = [:]
 
     private let wallAnimation = Animation.spring(response: 0.3, dampingFraction: 0.84)
+    private let wallCoordinateSpace = "monitor-wall-grid"
 
     var body: some View {
         GeometryReader { proxy in
@@ -76,11 +78,18 @@ struct MonitorWallView: View {
                     }
                 }
             }
+            .coordinateSpace(name: wallCoordinateSpace)
+            .onPreferenceChange(MonitorWallTileFramePreferenceKey.self) { newValue in
+                tileFrames = newValue
+            }
             .onDrop(
                 of: [UTType.text],
-                delegate: MonitorWallDropResetDelegate(
+                delegate: MonitorWallReorderDropDelegate(
+                    appState: appState,
+                    tileFrames: tileFrames,
                     draggedSourceID: $draggedSourceID,
-                    dropTargetSourceID: $dropTargetSourceID
+                    dropTargetSourceID: $dropTargetSourceID,
+                    animation: wallAnimation
                 )
             )
         } else {
@@ -92,11 +101,18 @@ struct MonitorWallView: View {
                     }
                 }
             }
+            .coordinateSpace(name: wallCoordinateSpace)
+            .onPreferenceChange(MonitorWallTileFramePreferenceKey.self) { newValue in
+                tileFrames = newValue
+            }
             .onDrop(
                 of: [UTType.text],
-                delegate: MonitorWallDropResetDelegate(
+                delegate: MonitorWallReorderDropDelegate(
+                    appState: appState,
+                    tileFrames: tileFrames,
                     draggedSourceID: $draggedSourceID,
-                    dropTargetSourceID: $dropTargetSourceID
+                    dropTargetSourceID: $dropTargetSourceID,
+                    animation: wallAnimation
                 )
             )
         }
@@ -109,21 +125,27 @@ struct MonitorWallView: View {
                 .zIndex(draggedSourceID == source.id ? 1 : 0)
                 .onDrag {
                     draggedSourceID = source.id
-                    dropTargetSourceID = source.id
+                    dropTargetSourceID = nil
                     return NSItemProvider(object: source.id as NSString)
                 }
-                .onDrop(
-                    of: [UTType.text],
-                    delegate: MonitorWallReorderDropDelegate(
-                        targetSourceID: source.id,
-                        appState: appState,
-                        draggedSourceID: $draggedSourceID,
-                        dropTargetSourceID: $dropTargetSourceID,
-                        animation: wallAnimation
-                    )
+                .background(
+                    GeometryReader { proxy in
+                        Color.clear.preference(
+                            key: MonitorWallTileFramePreferenceKey.self,
+                            value: [source.id: proxy.frame(in: .named(wallCoordinateSpace))]
+                        )
+                    }
                 )
         } else {
             tileView(for: source)
+                .background(
+                    GeometryReader { proxy in
+                        Color.clear.preference(
+                            key: MonitorWallTileFramePreferenceKey.self,
+                            value: [source.id: proxy.frame(in: .named(wallCoordinateSpace))]
+                        )
+                    }
+                )
         }
     }
 
@@ -154,53 +176,84 @@ struct MonitorWallView: View {
 
 @MainActor
 private struct MonitorWallReorderDropDelegate: DropDelegate {
-    let targetSourceID: String
     let appState: AppState
+    let tileFrames: [String: CGRect]
     @Binding var draggedSourceID: String?
     @Binding var dropTargetSourceID: String?
     let animation: Animation
 
     func dropEntered(info: DropInfo) {
-        guard let draggedSourceID, draggedSourceID != targetSourceID else { return }
-        dropTargetSourceID = targetSourceID
+        reorderIfNeeded(at: info.location)
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        reorderIfNeeded(at: info.location)
+        return DropProposal(operation: .move)
+    }
+
+    func dropExited(info: DropInfo) {
+        finalizeDrag()
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        reorderIfNeeded(at: info.location)
+        finalizeDrag()
+        return true
+    }
+
+    private func reorderIfNeeded(at location: CGPoint) {
+        guard let draggedSourceID else { return }
+        guard let targetSourceID = targetSourceID(for: location, excluding: draggedSourceID) else { return }
+
+        if dropTargetSourceID != targetSourceID {
+            dropTargetSourceID = targetSourceID
+        }
+
         withAnimation(animation) {
-            appState.moveSelectedSource(id: draggedSourceID, to: targetSourceID)
+            _ = appState.previewSelectedSourceMove(id: draggedSourceID, to: targetSourceID)
         }
     }
 
-    func dropUpdated(info: DropInfo) -> DropProposal? {
-        DropProposal(operation: .move)
+    private func targetSourceID(for location: CGPoint, excluding draggedSourceID: String) -> String? {
+        let hitTarget = tileFrames.first { sourceID, frame in
+            sourceID != draggedSourceID && frame.contains(location)
+        }
+        if let hitTarget {
+            return hitTarget.key
+        }
+
+        return tileFrames
+            .filter { $0.key != draggedSourceID }
+            .min { lhs, rhs in
+                distance(from: location, to: lhs.value.center) < distance(from: location, to: rhs.value.center)
+            }?
+            .key
     }
 
-    func dropExited(info: DropInfo) {
-        guard dropTargetSourceID == targetSourceID else { return }
-        dropTargetSourceID = nil
+    private func distance(from point: CGPoint, to target: CGPoint) -> CGFloat {
+        let deltaX = point.x - target.x
+        let deltaY = point.y - target.y
+        return sqrt((deltaX * deltaX) + (deltaY * deltaY))
     }
 
-    func performDrop(info: DropInfo) -> Bool {
+    private func finalizeDrag() {
+        guard draggedSourceID != nil else { return }
+        appState.commitSelectedSourceOrder()
         draggedSourceID = nil
         dropTargetSourceID = nil
-        return true
     }
 }
 
-@MainActor
-private struct MonitorWallDropResetDelegate: DropDelegate {
-    @Binding var draggedSourceID: String?
-    @Binding var dropTargetSourceID: String?
+private struct MonitorWallTileFramePreferenceKey: PreferenceKey {
+    static let defaultValue: [String: CGRect] = [:]
 
-    func dropUpdated(info: DropInfo) -> DropProposal? {
-        DropProposal(operation: .move)
+    static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
     }
+}
 
-    func dropExited(info: DropInfo) {
-        draggedSourceID = nil
-        dropTargetSourceID = nil
-    }
-
-    func performDrop(info: DropInfo) -> Bool {
-        draggedSourceID = nil
-        dropTargetSourceID = nil
-        return true
+private extension CGRect {
+    var center: CGPoint {
+        CGPoint(x: midX, y: midY)
     }
 }
