@@ -9,7 +9,7 @@ struct MyScreenApp: App {
             RootView(appState: appState)
                 .frame(minWidth: 900, minHeight: 620)
                 .task {
-                    appState.bootstrap()
+                    await appState.bootstrap()
                 }
         }
         .defaultSize(width: 1440, height: 900)
@@ -34,6 +34,29 @@ private struct RootView: View {
                     }
                 )
             }
+        }
+        .toolbar {
+            if appState.permissionStatus == .granted {
+                ToolbarItemGroup(placement: .primaryAction) {
+                    Button {
+                        Task {
+                            await appState.refreshSourceCatalog()
+                        }
+                    } label: {
+                        Label("Refresh Sources", systemImage: "arrow.clockwise")
+                    }
+                    .disabled(appState.isRefreshingSourceCatalog)
+
+                    Button {
+                        appState.isSourcePickerPresented = true
+                    } label: {
+                        Label("Sources", systemImage: "slider.horizontal.3")
+                    }
+                }
+            }
+        }
+        .sheet(isPresented: $appState.isSourcePickerPresented) {
+            SourcePickerView(appState: appState)
         }
     }
 }
