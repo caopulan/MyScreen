@@ -18,7 +18,6 @@ struct MyScreenApp: App {
                 }
         }
         .defaultSize(width: 1440, height: 900)
-        .windowStyle(.hiddenTitleBar)
     }
 }
 
@@ -72,58 +71,54 @@ private struct FloatingWallControls: View {
                     }
                 }
             } label: {
-                FloatingControlButtonLabel(
-                    title: "Layout",
-                    systemImage: "square.grid.3x3"
+                FloatingIconControlButton(
+                    systemImage: "square.grid.3x3.fill"
                 )
             }
             .menuStyle(.borderlessButton)
+            .help("Layout")
 
             Button {
                 Task {
                     await appState.refreshSourceCatalog()
                 }
             } label: {
-                FloatingControlButtonLabel(
-                    title: appState.isRefreshingSourceCatalog ? "Refreshing" : "Refresh",
+                FloatingIconControlButton(
                     systemImage: appState.isRefreshingSourceCatalog ? "arrow.trianglehead.2.clockwise.rotate.90" : "arrow.clockwise"
                 )
             }
+            .buttonStyle(.plain)
             .disabled(appState.isRefreshingSourceCatalog)
+            .help("Refresh")
 
             Button {
                 appState.isSourcePickerPresented = true
             } label: {
-                FloatingControlButtonLabel(
-                    title: "Add",
-                    systemImage: "plus.rectangle.on.rectangle"
-                )
+                FloatingIconControlButton(systemImage: "plus")
             }
+            .buttonStyle(.plain)
+            .help("Add")
         }
-        .padding(10)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(Color.white.opacity(0.08), lineWidth: 1)
-        }
-        .shadow(color: .black.opacity(0.3), radius: 20, y: 10)
     }
 }
 
-private struct FloatingControlButtonLabel: View {
-    let title: String
+private struct FloatingIconControlButton: View {
     let systemImage: String
 
     var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: systemImage)
-                .font(.system(size: 13, weight: .semibold))
-            Text(title)
-                .font(.system(size: 12, weight: .semibold))
-        }
-        .foregroundStyle(.white.opacity(0.94))
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        Image(systemName: systemImage)
+            .font(.system(size: 15, weight: .semibold))
+            .foregroundStyle(Color.black.opacity(0.72))
+            .frame(width: 42, height: 36)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.white.opacity(0.22))
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(Color.white.opacity(0.55), lineWidth: 1)
+            }
+            .shadow(color: .black.opacity(0.2), radius: 14, y: 8)
     }
 }
