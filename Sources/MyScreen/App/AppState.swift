@@ -18,14 +18,19 @@ final class AppState {
     private let permissionService: ScreenCapturePermissionService
     private let sourceCatalogService: SourceCatalogService
     private let snapshotStore: WallSessionSnapshotStore
+    private let captureCoordinator: CaptureCoordinator
+    private var captureSyncTask: Task<Void, Never>?
+    private var catalogRefreshTask: Task<Void, Never>?
 
     init(
         permissionService: ScreenCapturePermissionService = ScreenCapturePermissionService(),
         sourceCatalogService: SourceCatalogService = SourceCatalogService(),
+        captureCoordinator: CaptureCoordinator = CaptureCoordinator(),
         snapshotStore: WallSessionSnapshotStore = WallSessionSnapshotStore()
     ) {
         self.permissionService = permissionService
         self.sourceCatalogService = sourceCatalogService
+        self.captureCoordinator = captureCoordinator
         self.snapshotStore = snapshotStore
 
         let snapshot = snapshotStore.load() ?? .empty
@@ -51,12 +56,27 @@ final class AppState {
                 )
             }
         )
+
+        self.captureCoordinator.onFrame = { [weak self] sourceID, frame, tier in
+            self?.applyFrame(sourceID: sourceID, frame: frame, tier: tier)
+        }
+        self.captureCoordinator.onError = { [weak self] sourceID, message in
+            self?.applyError(sourceID: sourceID, message: message)
+        }
+        self.captureCoordinator.onOffline = { [weak self] sourceID in
+            self?.applyOffline(sourceID: sourceID)
+        }
     }
 
     func bootstrap() async {
         permissionStatus = permissionService.currentStatus()
         ensureTileStateCoverage()
-        guard permissionStatus == .granted else { return }
+        guard permissionStatus == .granted else {
+            stopCatalogAutoRefresh()
+            scheduleCaptureSync()
+            return
+        }
+        startCatalogAutoRefresh()
         await refreshSourceCatalog()
     }
 
@@ -65,7 +85,12 @@ final class AppState {
         isPermissionRequestInFlight = true
         permissionStatus = await permissionService.requestAccess()
         isPermissionRequestInFlight = false
-        guard permissionStatus == .granted else { return }
+        guard permissionStatus == .granted else {
+            stopCatalogAutoRefresh()
+            scheduleCaptureSync()
+            return
+        }
+        startCatalogAutoRefresh()
         await refreshSourceCatalog()
     }
 
@@ -80,10 +105,12 @@ final class AppState {
     func setFocusedSourceID(_ sourceID: String?) {
         wallLayout.focusedSourceID = sourceID
         persistSnapshot()
+        scheduleCaptureSync()
     }
 
     func refreshSourceCatalog() async {
         guard permissionStatus == .granted else { return }
+        guard !isRefreshingSourceCatalog else { return }
         isRefreshingSourceCatalog = true
         sourceCatalogError = nil
 
@@ -100,6 +127,7 @@ final class AppState {
             ensureTileStateCoverage()
             syncTilesWithSelectedSources()
             persistSnapshot()
+            scheduleCaptureSync()
         } catch {
             sourceCatalogError = error.localizedDescription
         }
@@ -125,6 +153,7 @@ final class AppState {
             lastFrameAt: source.lastSeenAt
         )
         persistSnapshot()
+        scheduleCaptureSync()
     }
 
     func replaceSelectedSources(_ sources: [MonitorSource]) {
@@ -134,6 +163,7 @@ final class AppState {
         ensureTileStateCoverage()
         syncTilesWithSelectedSources()
         persistSnapshot()
+        scheduleCaptureSync()
     }
 
     func removeSource(id: String) {
@@ -145,6 +175,7 @@ final class AppState {
         }
         wallLayout.grid = WallGridCalculator.calculate(for: selectedSources.count, in: wallLayout.windowSize.cgSize)
         persistSnapshot()
+        scheduleCaptureSync()
     }
 
     private func ensureTileStateCoverage() {
@@ -185,5 +216,69 @@ final class AppState {
                 windowSize: wallLayout.windowSize
             )
         )
+    }
+
+    private func scheduleCaptureSync() {
+        captureSyncTask?.cancel()
+
+        let isGranted = permissionStatus == .granted
+        let sources = selectedSources
+        let focusSourceID = wallLayout.focusedSourceID
+        let coordinator = captureCoordinator
+
+        captureSyncTask = Task {
+            if isGranted {
+                await coordinator.sync(sources: sources, focusSourceID: focusSourceID)
+            } else {
+                await coordinator.stopAll()
+            }
+        }
+    }
+
+    private func startCatalogAutoRefresh() {
+        guard catalogRefreshTask == nil else { return }
+
+        catalogRefreshTask = Task { [weak self] in
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(for: .seconds(5))
+                } catch {
+                    return
+                }
+
+                guard let self else { return }
+                await self.refreshSourceCatalog()
+            }
+        }
+    }
+
+    private func stopCatalogAutoRefresh() {
+        catalogRefreshTask?.cancel()
+        catalogRefreshTask = nil
+    }
+
+    private func applyFrame(sourceID: String, frame: PreviewFrame, tier: TileFrameRateTier) {
+        guard var tile = tiles[sourceID] else { return }
+        tile.previewImage = frame.image
+        tile.fpsTier = tier
+        tile.freshness = .live
+        tile.lastFrameAt = frame.createdAt
+        tile.errorMessage = nil
+        tiles[sourceID] = tile
+    }
+
+    private func applyError(sourceID: String, message: String) {
+        guard var tile = tiles[sourceID] else { return }
+        tile.errorMessage = message
+        tile.freshness = .stale
+        tiles[sourceID] = tile
+    }
+
+    private func applyOffline(sourceID: String) {
+        guard var tile = tiles[sourceID] else { return }
+        tile.freshness = .offline
+        tile.previewImage = nil
+        tile.errorMessage = nil
+        tiles[sourceID] = tile
     }
 }

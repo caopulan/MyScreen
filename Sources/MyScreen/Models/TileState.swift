@@ -12,6 +12,19 @@ enum TileFrameRateTier: String {
     case balanced
     case low
     case polling
+
+    var displayName: String {
+        switch self {
+        case .high:
+            "High FPS"
+        case .balanced:
+            "Balanced"
+        case .low:
+            "Low FPS"
+        case .polling:
+            "Polling"
+        }
+    }
 }
 
 struct TileState {

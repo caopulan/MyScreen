@@ -53,10 +53,21 @@ struct MonitorTileView: View {
 
                 Spacer()
 
+                Text(tile.fpsTier.displayName)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+
                 Button(isFocused ? "Exit Focus" : "Focus", action: onToggleFocus)
                 Button("Remove", role: .destructive, action: onRemove)
             }
             .buttonStyle(.borderless)
+
+            if let errorMessage = tile.errorMessage {
+                Text(errorMessage)
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .lineLimit(2)
+            }
         }
         .padding(14)
         .background(
