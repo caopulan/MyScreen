@@ -21,6 +21,7 @@ final class AppState {
     private let captureCoordinator: CaptureCoordinator
     private var captureSyncTask: Task<Void, Never>?
     private var catalogRefreshTask: Task<Void, Never>?
+    private var freshnessSweepTask: Task<Void, Never>?
 
     init(
         permissionService: ScreenCapturePermissionService = ScreenCapturePermissionService(),
@@ -73,10 +74,12 @@ final class AppState {
         ensureTileStateCoverage()
         guard permissionStatus == .granted else {
             stopCatalogAutoRefresh()
+            stopFreshnessSweep()
             scheduleCaptureSync()
             return
         }
         startCatalogAutoRefresh()
+        startFreshnessSweep()
         await refreshSourceCatalog()
     }
 
@@ -87,10 +90,12 @@ final class AppState {
         isPermissionRequestInFlight = false
         guard permissionStatus == .granted else {
             stopCatalogAutoRefresh()
+            stopFreshnessSweep()
             scheduleCaptureSync()
             return
         }
         startCatalogAutoRefresh()
+        startFreshnessSweep()
         await refreshSourceCatalog()
     }
 
@@ -257,6 +262,28 @@ final class AppState {
         catalogRefreshTask = nil
     }
 
+    private func startFreshnessSweep() {
+        guard freshnessSweepTask == nil else { return }
+
+        freshnessSweepTask = Task { [weak self] in
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(for: .seconds(2))
+                } catch {
+                    return
+                }
+
+                guard let self else { return }
+                self.markStaleTiles()
+            }
+        }
+    }
+
+    private func stopFreshnessSweep() {
+        freshnessSweepTask?.cancel()
+        freshnessSweepTask = nil
+    }
+
     private func applyFrame(sourceID: String, frame: PreviewFrame, tier: TileFrameRateTier) {
         guard var tile = tiles[sourceID] else { return }
         tile.previewImage = frame.image
@@ -265,6 +292,7 @@ final class AppState {
         tile.lastFrameAt = frame.createdAt
         tile.errorMessage = nil
         tiles[sourceID] = tile
+        updateSourceMetadata(sourceID: sourceID, isAvailable: true, lastSeenAt: frame.createdAt)
     }
 
     private func applyError(sourceID: String, message: String) {
@@ -280,5 +308,24 @@ final class AppState {
         tile.previewImage = nil
         tile.errorMessage = nil
         tiles[sourceID] = tile
+        updateSourceMetadata(sourceID: sourceID, isAvailable: false, lastSeenAt: nil)
+    }
+
+    private func markStaleTiles(referenceDate: Date = Date()) {
+        for sourceID in tiles.keys {
+            guard var tile = tiles[sourceID] else { continue }
+            guard tile.freshness == .live, tile.errorMessage == nil else { continue }
+            guard let lastFrameAt = tile.lastFrameAt else { continue }
+            if referenceDate.timeIntervalSince(lastFrameAt) > 3 {
+                tile.freshness = .stale
+                tiles[sourceID] = tile
+            }
+        }
+    }
+
+    private func updateSourceMetadata(sourceID: String, isAvailable: Bool, lastSeenAt: Date?) {
+        guard let index = selectedSources.firstIndex(where: { $0.id == sourceID }) else { return }
+        selectedSources[index].isAvailable = isAvailable
+        selectedSources[index].lastSeenAt = lastSeenAt ?? selectedSources[index].lastSeenAt
     }
 }

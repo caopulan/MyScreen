@@ -27,7 +27,17 @@ struct MonitorWallView: View {
                 description: Text("Add displays and app windows to build the monitoring wall.")
             )
         } else {
-            wallContent(in: size)
+            VStack(alignment: .leading, spacing: 16) {
+                WallStatusSummaryView(
+                    sourceCount: appState.selectedSources.count,
+                    liveCount: appState.tiles.values.filter { $0.freshness == .live }.count,
+                    staleCount: appState.tiles.values.filter { $0.freshness == .stale }.count,
+                    offlineCount: appState.tiles.values.filter { $0.freshness == .offline }.count,
+                    grid: appState.wallLayout.grid
+                )
+
+                wallContent(in: size)
+            }
         }
     }
 
@@ -96,6 +106,42 @@ struct MonitorWallView: View {
             onRemove: {
                 appState.removeSource(id: source.id)
             }
+        )
+    }
+}
+
+private struct WallStatusSummaryView: View {
+    let sourceCount: Int
+    let liveCount: Int
+    let staleCount: Int
+    let offlineCount: Int
+    let grid: WallGrid
+
+    var body: some View {
+        HStack(spacing: 12) {
+            summaryBadge(title: "Sources", value: "\(sourceCount)", color: .accentColor)
+            summaryBadge(title: "Live", value: "\(liveCount)", color: .green)
+            summaryBadge(title: "Waiting", value: "\(staleCount)", color: .yellow)
+            summaryBadge(title: "Offline", value: "\(offlineCount)", color: .red)
+            Spacer()
+            summaryBadge(title: "Grid", value: "\(grid.columns) × \(grid.rows)", color: .secondary)
+        }
+    }
+
+    private func summaryBadge(title: String, value: String, color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(color)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 14)
+                .fill(Color(nsColor: .underPageBackgroundColor))
         )
     }
 }
