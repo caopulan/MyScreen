@@ -226,21 +226,16 @@ final class AppState {
         scheduleCaptureSync()
     }
 
-    @discardableResult
-    func previewSelectedSourceMove(id sourceID: String, to targetSourceID: String) -> Bool {
-        let reorderedSources = SelectedSourceReorderer.reordered(
-            sources: selectedSources,
-            moving: sourceID,
-            to: targetSourceID
-        )
-        guard reorderedSources.map(\.id) != selectedSources.map(\.id) else { return false }
+    func commitSelectedSourceOrder(_ sourceIDs: [String]) {
+        guard sourceIDs.count == selectedSources.count else { return }
+
+        let selectedSourcesByID = Dictionary(uniqueKeysWithValues: selectedSources.map { ($0.id, $0) })
+        let reorderedSources = sourceIDs.compactMap { selectedSourcesByID[$0] }
+        guard reorderedSources.count == selectedSources.count else { return }
+        guard reorderedSources.map(\.id) != selectedSources.map(\.id) else { return }
 
         selectedSources = reorderedSources
         wallLayout.activeSourceIDs = reorderedSources.map(\.id)
-        return true
-    }
-
-    func commitSelectedSourceOrder() {
         persistSnapshot()
         scheduleCaptureSync()
     }

@@ -52,3 +52,29 @@ func reordererKeepsOrderWhenSourceOrTargetIsMissing() {
 
     #expect(reordered.map(\.id) == sources.map(\.id))
 }
+
+@Test
+func reordererMovesSourceToExplicitDestinationIndex() {
+    let sourceIDs = ["display:1", "window:2", "window:3", "window:4"]
+
+    let reordered = SelectedSourceReorderer.reordered(
+        sourceIDs: sourceIDs,
+        moving: "window:2",
+        toIndex: 3
+    )
+
+    #expect(reordered == ["display:1", "window:3", "window:4", "window:2"])
+}
+
+@Test
+func reordererClampsDestinationIndexIntoValidRange() {
+    let sourceIDs = ["display:1", "window:2", "window:3"]
+
+    let reordered = SelectedSourceReorderer.reordered(
+        sourceIDs: sourceIDs,
+        moving: "window:3",
+        toIndex: 99
+    )
+
+    #expect(reordered == ["display:1", "window:2", "window:3"])
+}
