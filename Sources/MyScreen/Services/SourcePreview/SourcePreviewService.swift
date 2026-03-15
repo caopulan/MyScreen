@@ -4,6 +4,8 @@ import CoreImage
 import Foundation
 
 enum SourcePreviewService {
+    private static let ciContext = CIContext()
+
     static func snapshotImage(for source: MonitorSource, maxDimension: Int) -> NSImage? {
         let baseImage: CGImage?
 
@@ -36,7 +38,6 @@ enum SourcePreviewService {
 
         let scale = CGFloat(maxDimension) / longestSide
         let ciImage = CIImage(cgImage: image).transformed(by: CGAffineTransform(scaleX: scale, y: scale))
-        let context = CIContext()
-        return context.createCGImage(ciImage, from: ciImage.extent) ?? image
+        return ciContext.createCGImage(ciImage, from: ciImage.extent) ?? image
     }
 }
